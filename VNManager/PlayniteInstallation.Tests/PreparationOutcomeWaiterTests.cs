@@ -51,7 +51,25 @@ public sealed class PreparationOutcomeWaiterTests : IDisposable
 
         Assert.False(result.Activation.OrchestratorActivated);
         Assert.False(result.IsCancelled);
+        Assert.False(result.IsSuperseded);
         Assert.Null(result.Outcome);
+    }
+
+    [Fact]
+    public async Task Superseded_marker_ends_preparation_wait_without_dispatching_another_cancel()
+    {
+        var store = new AtomicTransportFileStore(new TransportPaths(root));
+        var request = Request();
+        var waiter = new PreparationOutcomeWaiter(new OrchestratorDispatchService(store, new Launcher()), store, TimeSpan.FromMilliseconds(5));
+        store.MarkSuperseded(request.RequestId);
+
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        var result = await waiter.WaitAsync(request, cancellation.Token).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsCancelled);
+        Assert.True(result.IsSuperseded);
+        Assert.Null(result.Outcome);
+        Assert.Null(store.ReadInstallationCancellationCommand(request.RequestId));
     }
 
     public void Dispose()

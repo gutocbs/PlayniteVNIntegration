@@ -12,6 +12,22 @@ public sealed class InstallEligibilityTests
         Assert.True(result.IsEligible);
     }
 
+    [Fact]
+    public void Install_eligibility_rejects_only_an_active_same_game()
+    {
+        var activeGameId = Guid.NewGuid();
+        var otherGameId = Guid.NewGuid();
+        var workflows = new PendingInstallCompletionRegistry();
+        Assert.True(workflows.TryRegister(Guid.NewGuid(), activeGameId, _ => { }));
+
+        var active = InstallEligibility.Evaluate(Game(gameId: activeGameId), new ExistingFileProbe(), workflows);
+        var other = InstallEligibility.Evaluate(Game(gameId: otherGameId), new ExistingFileProbe(), workflows);
+
+        Assert.False(active.IsEligible);
+        Assert.Equal(InstallEligibilityRejection.WorkflowAlreadyActive, active.Rejection);
+        Assert.True(other.IsEligible);
+    }
+
     [Theory]
     [InlineData(true, @"K:\\Game.rar", "Visual Novel", false, InstallEligibilityRejection.Installed)]
     [InlineData(false, @"K:\\missing.rar", "Visual Novel", false, InstallEligibilityRejection.SourceMissing)]
@@ -26,8 +42,8 @@ public sealed class InstallEligibilityTests
         Assert.Equal(expected, result.Rejection);
     }
 
-    private static GameInstallSnapshot Game(bool installed = false, string source = @"K:\\Game.rar", string genre = "Visual Novel") =>
-        new(Guid.Parse("7604d65c-cb66-4fba-83c3-b1459f754f53"), "Game", installed, source, new[] { genre });
+    private static GameInstallSnapshot Game(bool installed = false, string source = @"K:\\Game.rar", string genre = "Visual Novel", Guid? gameId = null) =>
+        new(gameId ?? Guid.Parse("7604d65c-cb66-4fba-83c3-b1459f754f53"), "Game", installed, source, new[] { genre });
 
     private sealed class ExistingFileProbe : IFileProbe
     {
@@ -43,4 +59,5 @@ public sealed class InstallEligibilityTests
     {
         public bool HasActiveWorkflow(Guid gameId) => false;
     }
+
 }

@@ -50,12 +50,17 @@ internal sealed class PluginInstallWorkflowCoordinator : IDisposable
             wakeSignal);
     }
 
-    public bool IsEligible(Game game) => InstallEligibility.Evaluate(PlayniteInstallAdapter.ToSnapshot(game), new FileProbe(), new NoActiveWorkflowLookup()).IsEligible;
+    public bool IsEligible(Game game) => InstallEligibility.Evaluate(PlayniteInstallAdapter.ToSnapshot(game), new FileProbe(), installCompletions).IsEligible;
 
     public void Dispatch(Game game, Action<string> completeInstall, Action cancelInstall)
     {
         var request = PlayniteInstallAdapter.CreateRequest(game);
-        installCompletions.Register(request.RequestId, game.Id, completeInstall, cancelInstall);
+        if (!installCompletions.TryRegister(
+            request.RequestId,
+            game.Id,
+            completeInstall,
+            () => uiDispatcher.BeginInvoke(() => CancelLocalInstall(game.Id, cancelInstall)),
+            requestId => dispatch.DispatchCancellationAsync(requestId, game.Id))) return;
         try
         {
             dispatch.PersistRequest(request);
@@ -93,7 +98,7 @@ internal sealed class PluginInstallWorkflowCoordinator : IDisposable
 
     public void CancelPendingPreparation(Guid gameId)
     {
-        if (pendingPreparations.TryGetValue(gameId, out var cancellation)) cancellation.Cancel();
+        installCompletions.TryRequestCancellation(gameId);
     }
 
     // Extraction can take minutes; a modal progress window would block Playnite for all of it.
@@ -141,6 +146,11 @@ internal sealed class PluginInstallWorkflowCoordinator : IDisposable
             CancelLiveInstall(request, publishCancellation: true);
             return;
         }
+        if (result.IsSuperseded)
+        {
+            CancelLiveInstall(request, publishCancellation: false);
+            return;
+        }
         var outcome = result.Outcome;
         if (outcome is null || outcome.Outcome == PreparationOutcomeKind.Failed)
         {
@@ -172,8 +182,18 @@ internal sealed class PluginInstallWorkflowCoordinator : IDisposable
 
     private void CancelLiveInstall(InstallationRequest request, bool publishCancellation)
     {
+        if (publishCancellation)
+        {
+            installCompletions.TryRequestCancellation(request.PlayniteGameId);
+            return;
+        }
         installCompletions.TryCancel(request.RequestId, request.PlayniteGameId);
-        if (publishCancellation) _ = dispatch.DispatchCancellationAsync(request.RequestId, request.PlayniteGameId);
+    }
+
+    private void CancelLocalInstall(Guid gameId, Action cancelInstall)
+    {
+        if (pendingPreparations.TryGetValue(gameId, out var cancellation)) cancellation.Cancel();
+        cancelInstall();
     }
 
     private void ApplyTerminalOutcomes()
@@ -278,7 +298,6 @@ internal sealed class PluginInstallWorkflowCoordinator : IDisposable
     }
 
     private sealed class FileProbe : IFileProbe { public bool Exists(string path) => File.Exists(path); }
-    private sealed class NoActiveWorkflowLookup : IActiveWorkflowLookup { public bool HasActiveWorkflow(Guid gameId) => false; }
     private sealed class PlayniteUiDispatcher(IPlayniteAPI api) : IResultReadyUiDispatcher
     {
         public void BeginInvoke(Action action) => api.MainView.UIDispatcher.BeginInvoke(action);

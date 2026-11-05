@@ -8,7 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="PlayniteSDK" Version="6.16.0" />
-    <PackageReference Include="VNInstallation.Protocol" Version="1.0.0-alpha.7" />
+    <PackageReference Include="VNInstallation.Protocol" Version="1.0.0-alpha.8" />
     <ProjectReference Include="..\PlayniteInstallation\PlayniteInstallation.csproj" />
     <Reference Include="WindowsBase" />
     <Reference Include="PresentationFramework" />

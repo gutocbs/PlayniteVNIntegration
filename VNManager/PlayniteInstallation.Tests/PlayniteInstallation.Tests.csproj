@@ -7,7 +7,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="VNInstallation.Protocol" Version="1.0.0-alpha.7" />
+    <PackageReference Include="VNInstallation.Protocol" Version="1.0.0-alpha.8" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />
     <Using Include="Xunit" />
   </ItemGroup>
