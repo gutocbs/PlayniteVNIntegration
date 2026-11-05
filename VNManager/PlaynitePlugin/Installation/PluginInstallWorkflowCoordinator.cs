@@ -59,7 +59,7 @@ internal sealed class PluginInstallWorkflowCoordinator : IDisposable
             request.RequestId,
             game.Id,
             completeInstall,
-            () => uiDispatcher.BeginInvoke(() => CancelLocalInstall(game.Id, cancelInstall)),
+            () => CancelLocalInstallAsync(game.Id, cancelInstall),
             requestId => dispatch.DispatchCancellationAsync(requestId, game.Id))) return;
         try
         {
@@ -194,6 +194,31 @@ internal sealed class PluginInstallWorkflowCoordinator : IDisposable
     {
         if (pendingPreparations.TryGetValue(gameId, out var cancellation)) cancellation.Cancel();
         cancelInstall();
+    }
+
+    private Task CancelLocalInstallAsync(Guid gameId, Action cancelInstall)
+    {
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            uiDispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    CancelLocalInstall(gameId, cancelInstall);
+                    completion.SetResult(true);
+                }
+                catch (Exception exception)
+                {
+                    completion.SetException(exception);
+                }
+            });
+        }
+        catch (Exception exception)
+        {
+            completion.SetException(exception);
+        }
+        return completion.Task;
     }
 
     private void ApplyTerminalOutcomes()

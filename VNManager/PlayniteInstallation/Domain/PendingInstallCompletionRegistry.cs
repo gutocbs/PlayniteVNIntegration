@@ -10,7 +10,7 @@ public sealed class PendingInstallCompletionRegistry : IActiveWorkflowLookup
         Guid requestId,
         Guid gameId,
         Action<string> complete,
-        Action? cancel = null,
+        Func<Task>? cancel = null,
         Func<Guid, Task>? requestCancellation = null)
     {
         lock (sync)
@@ -49,9 +49,9 @@ public sealed class PendingInstallCompletionRegistry : IActiveWorkflowLookup
         {
             if (!pending.TryGetValue(requestId, out pendingCompletion) || pendingCompletion.GameId != gameId) return false;
             if (pendingCompletion.CancellationRequested) return false;
-            Remove(requestId, gameId);
+            pendingCompletion.CancellationRequested = true;
         }
-        pendingCompletion.Cancel?.Invoke();
+        _ = CompleteCancellationAsync(requestId, gameId, pendingCompletion);
         return true;
     }
 
@@ -68,18 +68,18 @@ public sealed class PendingInstallCompletionRegistry : IActiveWorkflowLookup
 
         if (pendingCompletion.RequestCancellation is null)
         {
-            CompleteCancellation(requestId, gameId, pendingCompletion);
+            _ = CompleteCancellationAsync(requestId, gameId, pendingCompletion);
         }
         else
         {
             _ = DispatchThenCancelAsync(
                 () => pendingCompletion.RequestCancellation(requestId),
-                () => CompleteCancellation(requestId, gameId, pendingCompletion));
+                () => CompleteCancellationAsync(requestId, gameId, pendingCompletion));
         }
         return true;
     }
 
-    private static async Task DispatchThenCancelAsync(Func<Task> dispatchCancellation, Action? cancel)
+    private static async Task DispatchThenCancelAsync(Func<Task> dispatchCancellation, Func<Task> cancel)
     {
         try
         {
@@ -90,15 +90,15 @@ public sealed class PendingInstallCompletionRegistry : IActiveWorkflowLookup
         }
         finally
         {
-            cancel?.Invoke();
+            await cancel().ConfigureAwait(false);
         }
     }
 
-    private void CompleteCancellation(Guid requestId, Guid gameId, PendingCompletion pendingCompletion)
+    private async Task CompleteCancellationAsync(Guid requestId, Guid gameId, PendingCompletion pendingCompletion)
     {
         try
         {
-            pendingCompletion.Cancel?.Invoke();
+            if (pendingCompletion.Cancel is not null) await pendingCompletion.Cancel().ConfigureAwait(false);
         }
         finally
         {
@@ -115,12 +115,12 @@ public sealed class PendingInstallCompletionRegistry : IActiveWorkflowLookup
     private sealed class PendingCompletion(
         Guid gameId,
         Action<string> complete,
-        Action? cancel,
+        Func<Task>? cancel,
         Func<Guid, Task>? requestCancellation)
     {
         public Guid GameId { get; } = gameId;
         public Action<string> Complete { get; } = complete;
-        public Action? Cancel { get; } = cancel;
+        public Func<Task>? Cancel { get; } = cancel;
         public Func<Guid, Task>? RequestCancellation { get; } = requestCancellation;
         public bool CancellationRequested { get; set; }
     }

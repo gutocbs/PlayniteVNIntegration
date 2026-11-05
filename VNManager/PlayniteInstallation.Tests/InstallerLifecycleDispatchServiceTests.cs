@@ -38,7 +38,11 @@ public sealed class InstallerLifecycleDispatchServiceTests : IDisposable
             Guid.NewGuid(),
             gameId,
             _ => { },
-            () => localCancellation.SetResult(),
+            () =>
+            {
+                localCancellation.SetResult();
+                return Task.CompletedTask;
+            },
             async _ =>
             {
                 dispatchStarted.SetResult();
@@ -70,7 +74,11 @@ public sealed class InstallerLifecycleDispatchServiceTests : IDisposable
             originalRequestId,
             gameId,
             _ => { },
-            () => localCancellation.SetResult(),
+            () =>
+            {
+                localCancellation.SetResult();
+                return Task.CompletedTask;
+            },
             async _ =>
             {
                 dispatchStarted.SetResult();
@@ -91,6 +99,71 @@ public sealed class InstallerLifecycleDispatchServiceTests : IDisposable
         Assert.True(registry.TryRegister(replacementRequestId, gameId, _ => { }));
     }
 
+    [Fact]
+    public async Task Cancellation_requested_game_remains_active_while_the_ui_callback_is_queued()
+    {
+        var registry = new PendingInstallCompletionRegistry();
+        var dispatcher = new ControlledUiDispatcher();
+        var gameId = Guid.NewGuid();
+        var originalRequestId = Guid.NewGuid();
+        var replacementRequestId = Guid.NewGuid();
+        var localCancellation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Assert.True(registry.TryRegister(
+            originalRequestId,
+            gameId,
+            _ => { },
+            () =>
+            {
+                dispatcher.BeginInvoke(() => localCancellation.SetResult());
+                return localCancellation.Task;
+            },
+            _ => Task.CompletedTask));
+
+        Assert.True(registry.TryRequestCancellation(gameId));
+        Assert.True(SpinWait.SpinUntil(() => dispatcher.PendingAction is not null, TimeSpan.FromSeconds(5)));
+
+        Assert.True(registry.HasActiveGame(gameId));
+        Assert.False(registry.TryRegister(replacementRequestId, gameId, _ => { }));
+
+        dispatcher.ExecutePending();
+        await localCancellation.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.True(SpinWait.SpinUntil(() => !registry.HasActiveGame(gameId), TimeSpan.FromSeconds(5)));
+        Assert.True(registry.TryRegister(replacementRequestId, gameId, _ => { }));
+    }
+
+    [Fact]
+    public async Task Local_cancellation_keeps_the_game_active_while_the_ui_callback_is_queued()
+    {
+        var registry = new PendingInstallCompletionRegistry();
+        var dispatcher = new ControlledUiDispatcher();
+        var gameId = Guid.NewGuid();
+        var originalRequestId = Guid.NewGuid();
+        var replacementRequestId = Guid.NewGuid();
+        var localCancellation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Assert.True(registry.TryRegister(
+            originalRequestId,
+            gameId,
+            _ => { },
+            () =>
+            {
+                dispatcher.BeginInvoke(() => localCancellation.SetResult());
+                return localCancellation.Task;
+            }));
+
+        Assert.True(registry.TryCancel(originalRequestId, gameId));
+        Assert.True(SpinWait.SpinUntil(() => dispatcher.PendingAction is not null, TimeSpan.FromSeconds(5)));
+
+        Assert.True(registry.HasActiveGame(gameId));
+        Assert.False(registry.TryRegister(replacementRequestId, gameId, _ => { }));
+
+        dispatcher.ExecutePending();
+        await localCancellation.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.True(SpinWait.SpinUntil(() => !registry.HasActiveGame(gameId), TimeSpan.FromSeconds(5)));
+        Assert.True(registry.TryRegister(replacementRequestId, gameId, _ => { }));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root)) Directory.Delete(root, true);
@@ -104,6 +177,20 @@ public sealed class InstallerLifecycleDispatchServiceTests : IDisposable
         {
             Activations++;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ControlledUiDispatcher
+    {
+        public Action? PendingAction { get; private set; }
+
+        public void BeginInvoke(Action action) => PendingAction = action;
+
+        public void ExecutePending()
+        {
+            var action = PendingAction;
+            PendingAction = null;
+            action?.Invoke();
         }
     }
 }
