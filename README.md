@@ -57,7 +57,7 @@ The checked-in tool paths are examples. Do not commit local installation paths o
 ### Shared installation protocol verification
 
 `PlayniteInstallation` and `PlaynitePlugin` consume the exact
-`VNInstallation.Protocol` package version `1.0.0-alpha.7` from the local feed
+`VNInstallation.Protocol` package version `1.0.0-alpha.8` from the local feed
 `..\Playnite VN Protocol\artifacts\packages`, resolved by `Directory.Build.props`
 (the repositories must sit side by side). Run the non-deploying cross-repository
 gate from the protocol checkout:
@@ -77,6 +77,21 @@ the install dialogs; the protocol repository owns the shared wire contracts and
 transport; the Orchestrator owns the headless installation workflow. The gate can
 use `-SkipIntegrationFixtures` when the process-fixture runner is intentionally
 excluded from a local check.
+
+### Portable destination preflight lifecycle
+
+For portable archives, the Orchestrator inspects the default destination before
+it extracts to staging. A new or empty default proceeds without the new dialog;
+an existing non-empty destination needs explicit merge confirmation. Staging
+and the source archive are excluded from that check. The plugin keeps only one active install per `PlayniteGameId` while
+allowing different games to proceed independently. A cancellation immediately
+sends its correlated transport signal and the game remains active until local
+cancellation completes. A success, cancellation, or terminal failure releases
+the game so it can be installed again.
+
+This portable-only rule does not change directory ownership for ISO or
+external-installer flows. Automated gates validate consumer compatibility; the
+Playnite dialog and real-library checkpoint remain a separate manual test.
 
 ### Configure a Playnite game
 
