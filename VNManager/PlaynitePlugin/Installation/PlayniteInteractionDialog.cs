@@ -29,6 +29,8 @@ internal sealed class PlayniteInteractionDialog(IPlayniteAPI api) : IInteraction
                     null);
             case InteractionKind.ConfigureInstallation:
                 return new InstallationConfigurationDialog(api).Show(request);
+            case InteractionKind.SelectPortableDestination:
+                return new PortableDestinationDialog(api).Show(request);
             default:
                 throw new ArgumentOutOfRangeException(nameof(request.Kind), request.Kind, "Unsupported interaction kind.");
         }

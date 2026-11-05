@@ -17,6 +17,11 @@ internal sealed class PlayniteInteractionValidator(IPlayniteAPI api, AtomicTrans
             return Reject(ProtocolErrorCode.MissingRequiredField, "The installation configuration prompt is missing.");
         }
 
+        if (request.Kind == InteractionKind.SelectPortableDestination && request.PortableDestination == null)
+        {
+            return Reject(ProtocolErrorCode.MissingRequiredField, "The portable destination prompt is missing.");
+        }
+
         if (store.IsSuperseded(request.RequestId)) return Reject(ProtocolErrorCode.None, "The installation request was superseded.");
 
         var game = api.Database.Games.Get(request.PlayniteGameId);

@@ -46,12 +46,17 @@ public sealed class InteractionRequestProcessor(
             {
                 if (answered.Contains(request.InteractionId)) continue;
 
-                var validation = IsSupported(request.Kind)
-                    ? validator.Validate(request)
-                    : new InteractionValidationResult(
+                var validation = !IsSupported(request.Kind)
+                    ? new InteractionValidationResult(
                         false,
                         ProtocolErrorCode.UnsupportedInteractionKind,
-                        $"Interaction kind '{(int)request.Kind}' is not supported.");
+                        $"Interaction kind '{(int)request.Kind}' is not supported.")
+                    : request.Kind == InteractionKind.SelectPortableDestination && request.PortableDestination == null
+                        ? new InteractionValidationResult(
+                            false,
+                            ProtocolErrorCode.MissingRequiredField,
+                            "The portable destination prompt is missing.")
+                        : validator.Validate(request);
                 if (!validation.CanHandle)
                 {
                     rejected.Add(new RejectedInteraction(
@@ -73,10 +78,11 @@ public sealed class InteractionRequestProcessor(
                     request.PlayniteGameId,
                     request.Kind,
                     result.Outcome,
-                    request.Kind == InteractionKind.ConfigureInstallation ? null : result.SelectedPath,
+                    request.Kind is InteractionKind.ConfigureInstallation or InteractionKind.SelectPortableDestination ? null : result.SelectedPath,
                     DateTimeOffset.UtcNow)
                 {
-                    Configuration = request.Kind == InteractionKind.ConfigureInstallation ? result.Configuration : null
+                    Configuration = request.Kind == InteractionKind.ConfigureInstallation ? result.Configuration : null,
+                    PortableDestination = request.Kind == InteractionKind.SelectPortableDestination ? result.PortableDestination : null
                 };
                 store.WriteInteractionResponse(response);
                 answered.Add(request.InteractionId);
@@ -93,5 +99,6 @@ public sealed class InteractionRequestProcessor(
         or InteractionKind.SelectInstallationDirectory
         or InteractionKind.SelectGameExecutable
         or InteractionKind.ConfirmDirectInstallerLaunch
-        or InteractionKind.ConfigureInstallation;
+        or InteractionKind.ConfigureInstallation
+        or InteractionKind.SelectPortableDestination;
 }

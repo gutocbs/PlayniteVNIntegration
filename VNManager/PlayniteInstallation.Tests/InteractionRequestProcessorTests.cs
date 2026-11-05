@@ -147,6 +147,69 @@ public sealed class InteractionRequestProcessorTests : IDisposable
     }
 
     [Fact]
+    public void Cancelled_portable_destination_has_no_partial_selection()
+    {
+        var store = Store();
+        var request = Request(InteractionKind.SelectPortableDestination) with
+        {
+            PortableDestination = new PortableDestinationPrompt(@"D:\Jogos\星の記憶")
+        };
+        store.WriteInteractionRequest(request);
+
+        new InteractionRequestProcessor(
+            store,
+            new RecordingDialog(new InteractionDialogResult(InteractionOutcome.Cancelled, @"D:\must-not-be-used", null)),
+            AcceptingValidator(),
+            new RecordingWakeSignal()).ProcessPending();
+
+        var response = Assert.Single(store.ReadInteractionResponses());
+        Assert.Equal(InteractionOutcome.Cancelled, response.Outcome);
+        Assert.Null(response.SelectedPath);
+        Assert.Null(response.Configuration);
+        Assert.Null(response.PortableDestination);
+    }
+
+    [Fact]
+    public void Unsupported_missing_portable_destination_prompt_is_rejected_before_showing_a_dialog()
+    {
+        var store = Store();
+        var request = Request(InteractionKind.SelectPortableDestination);
+        store.WriteInteractionRequest(request);
+        var dialog = new RecordingDialog(new InteractionDialogResult(InteractionOutcome.Confirmed, null, null));
+
+        var summary = new InteractionRequestProcessor(store, dialog, AcceptingValidator(), new RecordingWakeSignal()).ProcessPending();
+
+        Assert.Equal(0, summary.Processed);
+        Assert.Empty(summary.Rejected);
+        Assert.Equal(0, dialog.CallCount);
+        Assert.Empty(store.ReadInteractionResponses());
+    }
+
+    [Fact]
+    public void Portable_destination_response_uses_structured_selection_not_selected_path()
+    {
+        var store = Store();
+        var request = Request(InteractionKind.SelectPortableDestination) with
+        {
+            PortableDestination = new PortableDestinationPrompt(@"D:\Jogos\星の記憶")
+        };
+        store.WriteInteractionRequest(request);
+        var selection = new PortableDestinationSelection(@"D:\Jogos\星の記憶", true);
+
+        new InteractionRequestProcessor(
+            store,
+            new RecordingDialog(new InteractionDialogResult(InteractionOutcome.Confirmed, @"D:\must-not-be-used", new InstallationConfigurationSelection(@"D:\ignored", @"D:\ignored\game.exe", null), selection)),
+            AcceptingValidator(),
+            new RecordingWakeSignal()).ProcessPending();
+
+        var response = Assert.Single(store.ReadInteractionResponses());
+        Assert.Equal(InteractionOutcome.Confirmed, response.Outcome);
+        Assert.Null(response.SelectedPath);
+        Assert.Null(response.Configuration);
+        Assert.Equal(selection, response.PortableDestination);
+    }
+
+    [Fact]
     public void Unknown_interaction_kind_is_rejected_without_showing_a_dialog_or_writing_a_response()
     {
         var store = Store();
