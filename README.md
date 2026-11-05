@@ -122,13 +122,29 @@ dotnet build .\VNManager\PlaynitePlugin\PlaynitePlugin.csproj -c Release
 
 Copy the resulting plugin build output, including its dependency files and `extension.yaml`, to the Playnite extensions directory. Deploy the complete output set together; copying a single DLL is not supported.
 
-To build and deploy over an installed copy in one step (close Playnite first):
+To build and deploy over an installed copy in one step, close Playnite and
+`VNInstallOrchestrator` first:
 
 ```powershell
 .\scripts\Publish-Extension.ps1          # add -WhatIf to preview
 ```
 
-The script backs up `%APPDATA%\Playnite\Extensions\VNManager` and the plugin data folder (`%APPDATA%\Playnite\ExtensionsData\0e1b3f2c-56f4-4eaf-bb7b-7f2c02aa5c5a`, where the plugin starts `LauncherSupervisor.exe` from) to `%APPDATA%\Playnite\VNManager-backups\<timestamp>`, then copies the new files over both. It never deletes files and never overwrites an existing `Configuration\*.json`.
+The publisher validates the plugin and supervisor outputs before it changes the
+installation. It then creates and SHA-256-verifies a fixed backup at
+`%APPDATA%\Playnite\VNManager-backups\8f9dc537-f997-47f1-b4de-7f8232a448b1`,
+including a `snapshot.sha256.json` manifest. A previous fixed backup is archived
+before it is replaced. The publish overlay never deletes files and preserves an
+existing `Configuration\*.json`.
+
+To restore that verified backup, again with Playnite and the Orchestrator closed:
+
+```powershell
+.\scripts\Rollback-Extension.ps1         # add -WhatIf to preview
+```
+
+Rollback revalidates the manifest, saves the current deployment under the same
+backup root as a timestamped safety copy, and then restores the extension and
+plugin data directories exactly.
 
 ## Process monitoring and cleanup
 
