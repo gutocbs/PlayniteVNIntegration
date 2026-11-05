@@ -158,7 +158,11 @@ public sealed class InteractionRequestProcessorTests : IDisposable
 
         new InteractionRequestProcessor(
             store,
-            new RecordingDialog(new InteractionDialogResult(InteractionOutcome.Cancelled, @"D:\must-not-be-used", null)),
+            new RecordingDialog(new InteractionDialogResult(
+                InteractionOutcome.Cancelled,
+                @"D:\must-not-be-used",
+                null,
+                new PortableDestinationSelection(@"D:\must-not-be-used", true))),
             AcceptingValidator(),
             new RecordingWakeSignal()).ProcessPending();
 

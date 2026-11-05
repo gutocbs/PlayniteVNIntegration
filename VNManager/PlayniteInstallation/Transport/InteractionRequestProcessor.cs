@@ -82,7 +82,10 @@ public sealed class InteractionRequestProcessor(
                     DateTimeOffset.UtcNow)
                 {
                     Configuration = request.Kind == InteractionKind.ConfigureInstallation ? result.Configuration : null,
-                    PortableDestination = request.Kind == InteractionKind.SelectPortableDestination ? result.PortableDestination : null
+                    PortableDestination = request.Kind == InteractionKind.SelectPortableDestination
+                                         && result.Outcome == InteractionOutcome.Confirmed
+                        ? result.PortableDestination
+                        : null
                 };
                 store.WriteInteractionResponse(response);
                 answered.Add(request.InteractionId);
