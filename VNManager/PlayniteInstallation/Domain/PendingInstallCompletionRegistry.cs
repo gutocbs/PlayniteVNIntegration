@@ -35,6 +35,7 @@ public sealed class PendingInstallCompletionRegistry : IActiveWorkflowLookup
         lock (sync)
         {
             if (!pending.TryGetValue(requestId, out pendingCompletion) || pendingCompletion.GameId != gameId) return false;
+            if (pendingCompletion.CancellationRequested) return false;
             Remove(requestId, gameId);
         }
         pendingCompletion.Complete(installationDirectory);
@@ -47,6 +48,7 @@ public sealed class PendingInstallCompletionRegistry : IActiveWorkflowLookup
         lock (sync)
         {
             if (!pending.TryGetValue(requestId, out pendingCompletion) || pendingCompletion.GameId != gameId) return false;
+            if (pendingCompletion.CancellationRequested) return false;
             Remove(requestId, gameId);
         }
         pendingCompletion.Cancel?.Invoke();
@@ -60,16 +62,19 @@ public sealed class PendingInstallCompletionRegistry : IActiveWorkflowLookup
         lock (sync)
         {
             if (!requestIdsByGame.TryGetValue(gameId, out requestId) || !pending.TryGetValue(requestId, out pendingCompletion)) return false;
-            Remove(requestId, gameId);
+            if (pendingCompletion.CancellationRequested) return false;
+            pendingCompletion.CancellationRequested = true;
         }
 
         if (pendingCompletion.RequestCancellation is null)
         {
-            pendingCompletion.Cancel?.Invoke();
+            CompleteCancellation(requestId, gameId, pendingCompletion);
         }
         else
         {
-            _ = DispatchThenCancelAsync(() => pendingCompletion.RequestCancellation(requestId), pendingCompletion.Cancel);
+            _ = DispatchThenCancelAsync(
+                () => pendingCompletion.RequestCancellation(requestId),
+                () => CompleteCancellation(requestId, gameId, pendingCompletion));
         }
         return true;
     }
@@ -89,11 +94,36 @@ public sealed class PendingInstallCompletionRegistry : IActiveWorkflowLookup
         }
     }
 
-    private sealed record PendingCompletion(
-        Guid GameId,
-        Action<string> Complete,
-        Action? Cancel,
-        Func<Guid, Task>? RequestCancellation);
+    private void CompleteCancellation(Guid requestId, Guid gameId, PendingCompletion pendingCompletion)
+    {
+        try
+        {
+            pendingCompletion.Cancel?.Invoke();
+        }
+        finally
+        {
+            lock (sync)
+            {
+                if (pending.TryGetValue(requestId, out var current) && ReferenceEquals(current, pendingCompletion))
+                {
+                    Remove(requestId, gameId);
+                }
+            }
+        }
+    }
+
+    private sealed class PendingCompletion(
+        Guid gameId,
+        Action<string> complete,
+        Action? cancel,
+        Func<Guid, Task>? requestCancellation)
+    {
+        public Guid GameId { get; } = gameId;
+        public Action<string> Complete { get; } = complete;
+        public Action? Cancel { get; } = cancel;
+        public Func<Guid, Task>? RequestCancellation { get; } = requestCancellation;
+        public bool CancellationRequested { get; set; }
+    }
 
     private void Remove(Guid requestId, Guid gameId)
     {

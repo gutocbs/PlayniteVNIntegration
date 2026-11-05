@@ -52,8 +52,43 @@ public sealed class InstallerLifecycleDispatchServiceTests : IDisposable
         releaseDispatch.SetResult();
         await localCancellation.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
-        Assert.False(registry.HasActiveGame(gameId));
+        Assert.True(SpinWait.SpinUntil(() => !registry.HasActiveGame(gameId), TimeSpan.FromSeconds(5)));
         Assert.False(registry.TryRequestCancellation(gameId));
+    }
+
+    [Fact]
+    public async Task Cancellation_requested_game_remains_active_until_the_local_callback_completes()
+    {
+        var registry = new PendingInstallCompletionRegistry();
+        var gameId = Guid.NewGuid();
+        var originalRequestId = Guid.NewGuid();
+        var replacementRequestId = Guid.NewGuid();
+        var dispatchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseDispatch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var localCancellation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Assert.True(registry.TryRegister(
+            originalRequestId,
+            gameId,
+            _ => { },
+            () => localCancellation.SetResult(),
+            async _ =>
+            {
+                dispatchStarted.SetResult();
+                await releaseDispatch.Task;
+            }));
+
+        Assert.True(registry.TryRequestCancellation(gameId));
+        await dispatchStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.True(registry.HasActiveGame(gameId));
+        Assert.False(registry.TryRegister(replacementRequestId, gameId, _ => { }));
+        Assert.False(registry.TryRequestCancellation(gameId));
+
+        releaseDispatch.SetResult();
+        await localCancellation.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.True(SpinWait.SpinUntil(() => !registry.HasActiveGame(gameId), TimeSpan.FromSeconds(5)));
+        Assert.True(registry.TryRegister(replacementRequestId, gameId, _ => { }));
     }
 
     public void Dispose()
